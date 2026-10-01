@@ -9,6 +9,8 @@ A Product Map has two parts:
 
 The Markdown is the source of truth and renders fine on GitHub. This package only reads, validates and renders it, a bit like Storybook does for components.
 
+![A flow page: the Mermaid diagram with pan and zoom, behavior details below](https://raw.githubusercontent.com/nuthinking/product-map-viewer/main/docs/screenshots/flow.png)
+
 The format and the agent skill that writes the map live in [nuthinking/skills](https://github.com/nuthinking/skills) (`product-map`).
 
 ## Use
@@ -58,6 +60,15 @@ dir                 Path to the Product Map folder. Defaults to ./product,
 ```
 
 ## What the viewer shows
+
+| Feature Map | Relationship map |
+|---|---|
+| ![Feature cards grouped by area](https://raw.githubusercontent.com/nuthinking/product-map-viewer/main/docs/screenshots/feature-map.png) | ![Features and flows side by side with their connections](https://raw.githubusercontent.com/nuthinking/product-map-viewer/main/docs/screenshots/relationship-map.png) |
+
+| Overview | Review |
+|---|---|
+| ![The README with counts for features, flows and open questions](https://raw.githubusercontent.com/nuthinking/product-map-viewer/main/docs/screenshots/overview.png) | ![Open questions with copy-prompt buttons](https://raw.githubusercontent.com/nuthinking/product-map-viewer/main/docs/screenshots/review.png) |
+
 
 - **Overview**: the README with counts for features, flows, open questions and validation problems.
 - **Feature Map**: one card per feature (ID, description, entry point, flows, code pointers, status), grouped by area. A **Map** mode draws features and flows side by side with the connections between them.
