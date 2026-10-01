@@ -1,0 +1,43 @@
+{
+  "name": "@nuthinking/product-map",
+  "version": "0.1.0",
+  "description": "Local viewer and validator for a repo-native Product Map: a Feature Map and Mermaid Product Flows kept in /product next to the code.",
+  "keywords": [
+    "product-map",
+    "documentation",
+    "mermaid",
+    "flows",
+    "features",
+    "sitemap",
+    "viewer"
+  ],
+  "license": "MIT",
+  "author": "Christian Giordano <christian@nuthinking.com> (https://nuthinking.com)",
+  "type": "module",
+  "bin": {
+    "product-map": "bin/product-map.js"
+  },
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "client",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "node bin/product-map.js serve example/product",
+    "validate:example": "node bin/product-map.js validate example/product",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "fuse.js": "^7.5.0",
+    "marked": "^18.0.14",
+    "mermaid": "^11.17.2"
+  }
+}
