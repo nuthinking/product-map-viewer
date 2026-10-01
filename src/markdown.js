@@ -1,21 +1,17 @@
 // Markdown → HTML for the viewer, with Product Map links rewritten to viewer routes.
 import { Marked } from 'marked';
 import path from 'node:path';
-import { slugify, UNCLEAR, DISAGREE } from './markdown-utils.js';
+import { slugify, UNCLEAR, DISAGREE, isExternalLink } from './markdown-utils.js';
 
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 export const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ESC[c]);
-
-function isExternal(href) {
-  return /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//');
-}
 
 /**
  * Map a Markdown link found in `fromRel` (path relative to the product root)
  * to a viewer route. Returns { href, kind } where kind is 'route' | 'external' | 'repo' | 'anchor'.
  */
 export function resolveLink(fromRel, href) {
-  if (isExternal(href)) return { href, kind: 'external' };
+  if (isExternalLink(href)) return { href, kind: 'external' };
   const hashIdx = href.indexOf('#');
   const filePart = hashIdx === -1 ? href : href.slice(0, hashIdx);
   const anchor = hashIdx === -1 ? '' : href.slice(hashIdx + 1);
@@ -29,11 +25,49 @@ export function resolveLink(fromRel, href) {
   return { href, kind: 'repo' };
 }
 
-/** Wrap the two known ⚠️ markers in a span so the viewer can style and find them. */
+/** Wrap the two known ⚠️ markers in a <mark>, touching text between tags only, never attributes. */
 function markMarkers(html) {
+  const u = escapeHtml(UNCLEAR);
+  const d = escapeHtml(DISAGREE);
+  if (!html.includes(u) && !html.includes(d)) return html;
   return html
-    .split(escapeHtml(UNCLEAR)).join(`<mark class="marker marker-unclear">${escapeHtml(UNCLEAR)}</mark>`)
-    .split(escapeHtml(DISAGREE)).join(`<mark class="marker marker-disagree">${escapeHtml(DISAGREE)}</mark>`);
+    .split(/(<[^>]*>)/)
+    .map((part, i) =>
+      i % 2 === 1
+        ? part
+        : part
+            .split(u).join(`<mark class="marker marker-unclear">${u}</mark>`)
+            .split(d).join(`<mark class="marker marker-disagree">${d}</mark>`),
+    )
+    .join('');
+}
+
+function linkRenderer() {
+  return {
+    link({ href, title, tokens, linkKind }) {
+      const text = this.parser.parseInline(tokens);
+      const t = title ? ` title="${escapeHtml(title)}"` : '';
+      if (linkKind === 'external') return `<a href="${escapeHtml(href)}"${t} target="_blank" rel="noopener">${text}</a>`;
+      if (linkKind === 'repo') return `<span class="repo-link" title="Repository path: ${escapeHtml(href)}">${text}</span>`;
+      return `<a href="${escapeHtml(href)}"${t} class="internal">${text}</a>`;
+    },
+  };
+}
+
+/** A Marked instance whose links are resolved relative to `fromRel`, with optional extra renderer hooks. */
+function makeMarked(fromRel, renderer = {}) {
+  return new Marked({
+    gfm: true,
+    breaks: false,
+    walkTokens(token) {
+      if (token.type === 'link' && fromRel) {
+        const r = resolveLink(fromRel, token.href);
+        token.href = r.href;
+        token.linkKind = r.kind;
+      }
+    },
+    renderer: { ...linkRenderer(), ...renderer },
+  });
 }
 
 /**
@@ -45,41 +79,23 @@ function markMarkers(html) {
  */
 export function renderMarkdown(md, { fromRel, headingOffset = 0 } = {}) {
   const counts = new Map();
-  const marked = new Marked({
-    gfm: true,
-    breaks: false,
-    walkTokens(token) {
-      if (token.type === 'link' && fromRel) {
-        const r = resolveLink(fromRel, token.href);
-        token.href = r.href;
-        token.linkKind = r.kind;
-      }
+  const marked = makeMarked(fromRel, {
+    heading({ tokens, depth }) {
+      const text = this.parser.parseInline(tokens);
+      const raw = tokens.map((t) => t.raw ?? t.text ?? '').join('');
+      const base = slugify(raw);
+      const n = counts.get(base) || 0;
+      counts.set(base, n + 1);
+      const id = n === 0 ? base : `${base}-${n}`;
+      const level = Math.min(6, depth + headingOffset);
+      return `<h${level} id="${escapeHtml(id)}" data-heading="${escapeHtml(raw.trim())}">${text}</h${level}>\n`;
     },
-    renderer: {
-      heading({ tokens, depth }) {
-        const text = this.parser.parseInline(tokens);
-        const raw = tokens.map((t) => t.raw ?? t.text ?? '').join('');
-        const base = slugify(raw);
-        const n = counts.get(base) || 0;
-        counts.set(base, n + 1);
-        const id = n === 0 ? base : `${base}-${n}`;
-        const level = Math.min(6, depth + headingOffset);
-        return `<h${level} id="${escapeHtml(id)}" data-heading="${escapeHtml(raw.trim())}">${text}</h${level}>\n`;
-      },
-      link({ href, title, tokens, linkKind }) {
-        const text = this.parser.parseInline(tokens);
-        const t = title ? ` title="${escapeHtml(title)}"` : '';
-        if (linkKind === 'external') return `<a href="${escapeHtml(href)}"${t} target="_blank" rel="noopener">${text}</a>`;
-        if (linkKind === 'repo') return `<span class="repo-link" title="Repository path: ${escapeHtml(href)}">${text}</span>`;
-        return `<a href="${escapeHtml(href)}"${t} class="internal">${text}</a>`;
-      },
-      code({ text, lang }) {
-        if ((lang || '').trim() === 'mermaid') {
-          return `<div class="mermaid-block" data-mermaid="${escapeHtml(text)}"></div>\n`;
-        }
-        const cls = lang ? ` class="language-${escapeHtml(lang)}"` : '';
-        return `<pre><code${cls}>${escapeHtml(text)}</code></pre>\n`;
-      },
+    code({ text, lang }) {
+      if ((lang || '').trim() === 'mermaid') {
+        return `<div class="mermaid-block" data-mermaid="${escapeHtml(text)}"></div>\n`;
+      }
+      const cls = lang ? ` class="language-${escapeHtml(lang)}"` : '';
+      return `<pre><code${cls}>${escapeHtml(text)}</code></pre>\n`;
     },
   });
   return markMarkers(marked.parse(md));
@@ -87,24 +103,5 @@ export function renderMarkdown(md, { fromRel, headingOffset = 0 } = {}) {
 
 /** Inline Markdown (a single line) to HTML, with links rewritten. */
 export function renderInline(md, { fromRel } = {}) {
-  const marked = new Marked({
-    gfm: true,
-    walkTokens(token) {
-      if (token.type === 'link' && fromRel) {
-        const r = resolveLink(fromRel, token.href);
-        token.href = r.href;
-        token.linkKind = r.kind;
-      }
-    },
-    renderer: {
-      link({ href, title, tokens, linkKind }) {
-        const text = this.parser.parseInline(tokens);
-        const t = title ? ` title="${escapeHtml(title)}"` : '';
-        if (linkKind === 'external') return `<a href="${escapeHtml(href)}"${t} target="_blank" rel="noopener">${text}</a>`;
-        if (linkKind === 'repo') return `<span class="repo-link" title="Repository path: ${escapeHtml(href)}">${text}</span>`;
-        return `<a href="${escapeHtml(href)}"${t} class="internal">${text}</a>`;
-      },
-    },
-  });
-  return markMarkers(marked.parseInline(md));
+  return markMarkers(makeMarked(fromRel).parseInline(md));
 }

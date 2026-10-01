@@ -117,13 +117,12 @@ export function section(md, title) {
 /** All `## ` sections of a Markdown body, in order: [{ title, body, line }]. Text before the first ## is returned as preamble. */
 export function sections(md) {
   const lines = md.split('\n');
+  const masked = stripFences(md).split('\n'); // same fence rules as everywhere else, nested fences included
   const result = [];
   let preamble = [];
   let cur = null;
-  let inFence = false;
   lines.forEach((line, i) => {
-    if (/^(`{3,}|~{3,})/.test(line)) inFence = !inFence;
-    const m = !inFence && /^##\s+(.*?)\s*#*\s*$/.exec(line);
+    const m = /^##\s+(.*?)\s*#*\s*$/.exec(masked[i]);
     if (m) {
       cur = { title: m[1], line: i + 1, lines: [] };
       result.push(cur);
@@ -134,6 +133,30 @@ export function sections(md) {
     preamble: preamble.join('\n'),
     sections: result.map((s) => ({ title: s.title, line: s.line, body: s.lines.join('\n') })),
   };
+}
+
+/** Python's str.splitlines() for \n-terminated text: no phantom empty line after a trailing newline. */
+export function splitLines(s) {
+  const lines = s.split('\n');
+  if (lines.length && lines[lines.length - 1] === '') lines.pop();
+  return lines;
+}
+
+/** Python's str() for the values our frontmatter parser produces (strings and lists). */
+export function pyStr(v) {
+  if (Array.isArray(v)) return `[${v.map((x) => `'${x}'`).join(', ')}]`;
+  return v === undefined || v === null ? '' : String(v);
+}
+
+/** Python truthiness for the same values: '' and [] are false. */
+export function pyTruthy(v) {
+  if (Array.isArray(v)) return v.length > 0;
+  return Boolean(v);
+}
+
+/** A link target that leaves the file system: a URL scheme or protocol-relative. */
+export function isExternalLink(target) {
+  return /^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith('//');
 }
 
 export function escapeRe(s) {

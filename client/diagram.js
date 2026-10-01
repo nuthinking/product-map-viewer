@@ -180,9 +180,10 @@ export function createDiagram(code, { onNode = null, isLinked = null, height = n
     const r = viewport.getBoundingClientRect();
     zoomAt(1.5, e.clientX - r.left, e.clientY - r.top);
   });
-  document.addEventListener('keydown', (e) => {
+  const onKey = (e) => {
     if (e.key === 'Escape' && root.classList.contains('full')) fullBtn.click();
-  });
+  };
+  document.addEventListener('keydown', onKey);
 
   root.render = async () => {
     canvas.innerHTML = '';
@@ -224,5 +225,28 @@ export function createDiagram(code, { onNode = null, isLinked = null, height = n
   root.fit = fit;
   const ro = new ResizeObserver(() => fit());
   ro.observe(viewport);
+  root.destroy = () => {
+    document.removeEventListener('keydown', onKey);
+    ro.disconnect();
+  };
   return root;
+}
+
+/** Render any ```mermaid blocks that came through the Markdown renderer as .mermaid-block placeholders. */
+export async function renderInlineMermaid(container) {
+  for (const block of container.querySelectorAll('.mermaid-block[data-mermaid]')) {
+    const code = block.dataset.mermaid;
+    try {
+      block.innerHTML = await renderMermaid(code);
+      const svg = block.querySelector('svg');
+      if (svg) {
+        svg.removeAttribute('height');
+        svg.style.maxWidth = '100%';
+        svg.style.height = 'auto';
+      }
+    } catch (err) {
+      block.innerHTML = '';
+      block.append(el('div', { class: 'dg-error' }, `Mermaid could not render this diagram: ${err.message || err}`), el('pre', {}, el('code', {}, code)));
+    }
+  }
 }

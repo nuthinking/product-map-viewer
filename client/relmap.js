@@ -98,5 +98,6 @@ export function createRelMap(map, { onNavigate } = {}) {
   const ro = new ResizeObserver(() => draw());
   ro.observe(root);
   root.draw = draw;
+  root.destroy = () => ro.disconnect();
   return root;
 }

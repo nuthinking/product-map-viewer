@@ -1,5 +1,5 @@
-import { el, html, raw, fromHtml, statusClass, storage, store, toast } from './util.js';
-import { createDiagram } from './diagram.js';
+import { el, html, raw, fromHtml, statusClass, storage, store, toast, icons } from './util.js';
+import { createDiagram, renderInlineMermaid } from './diagram.js';
 import { createRelMap } from './relmap.js';
 import { markerPrompt, issuePrompt, allMarkersPrompt, allIssuesPrompt, copyText } from './prompts.js';
 
@@ -52,7 +52,10 @@ export function renderOverview(map, report, anchor) {
   const prose = el('article', { class: 'prose' });
   prose.append(fromHtml(map.readme?.html || '<p><em>No README.md in the Product Map folder.</em></p>'));
   view.append(prose);
-  view.afterMount = () => scrollToAnchor(prose, anchor);
+  view.afterMount = async () => {
+    await renderInlineMermaid(prose);
+    scrollToAnchor(prose, anchor);
+  };
   return view;
 }
 
@@ -64,6 +67,7 @@ export function renderFeatures(map, anchor, { mode: forcedMode } = {}) {
   const setMode = (m) => {
     mode = m;
     store('pm-features-mode', m);
+    body.firstChild?.destroy?.();
     body.innerHTML = '';
     body.append(mode === 'map' ? buildMap() : buildCards());
     seg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.mode === mode));
@@ -117,13 +121,15 @@ export function renderFeatures(map, anchor, { mode: forcedMode } = {}) {
     return createRelMap(map);
   }
   setMode(mode);
-  view.afterMount = () => {
+  view.afterMount = async () => {
     if (mode === 'map') body.firstChild.draw();
     if (anchor) {
       if (mode !== 'cards') setMode('cards');
       scrollToAnchor(view, anchor, 'target');
     }
+    await renderInlineMermaid(body);
   };
+  view.cleanup = () => body.firstChild?.destroy?.();
   return view;
 }
 
@@ -266,8 +272,10 @@ export function renderFlow(map, id, anchor) {
   }
   view.afterMount = async () => {
     if (diagram.render) await diagram.render();
+    await renderInlineMermaid(sectionsEl);
     scrollToAnchor(view, anchor, 'hit');
   };
+  view.cleanup = () => diagram.destroy?.();
   return view;
 }
 
@@ -391,7 +399,7 @@ function selection(makePrompt) {
 
 function copyButton(label, getText, { small = true } = {}) {
   const b = el('button', { type: 'button', class: `copy-btn ${small ? 'small' : ''}`, title: 'Copy a prompt you can paste to your coding agent' });
-  b.append(fromHtml('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'));
+  b.append(fromHtml(icons.copy));
   const span = el('span', {}, label);
   b.append(span);
   b.addEventListener('click', async () => {

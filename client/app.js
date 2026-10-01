@@ -74,6 +74,7 @@ async function render({ keepScroll = false } = {}) {
   else if (route.name === 'flows') view = renderFlowsIndex(state.map);
   else if (route.name === 'flow') view = renderFlow(state.map, route.id, route.anchor);
   else if (route.name === 'review') view = renderReview(state.map, state.report, route.tab);
+  main.firstChild?.cleanup?.();
   main.innerHTML = '';
   main.append(view);
   if (keepScroll) main.scrollTop = scrollTop;
@@ -187,10 +188,13 @@ function renderSidebar() {
     e.stopPropagation();
     menu.hidden = !menu.hidden;
     themeBtn.setAttribute('aria-expanded', String(!menu.hidden));
-    if (!menu.hidden) menu.querySelector('[aria-checked="true"]')?.focus();
+    if (!menu.hidden) {
+      menu.querySelector('[aria-checked="true"]')?.focus();
+      // Close on the next click anywhere else; registered only while the menu is open.
+      document.addEventListener('click', closeMenu, { once: true });
+    }
   });
   menu.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => setTheme(b.dataset.theme)));
-  document.addEventListener('click', closeMenu, { once: true });
   menu.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       closeMenu();

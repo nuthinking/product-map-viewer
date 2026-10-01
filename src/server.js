@@ -48,32 +48,45 @@ function insideDir(dir, target) {
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
-/** Watch the product folder; calls onChange (debounced) on any change. Returns a close() function. */
+/**
+ * Watch the product folder; calls onChange (debounced) on any change. Returns a close() function.
+ * A Product Map is two levels deep (product/ and product/flows/), so both are watched directly
+ * rather than relying on recursive watching, which Node 18 silently ignores on Linux. Folders that
+ * do not exist yet (a map being created) are picked up on the next change event, so the watch
+ * keeps working after /product or /product/flows appears.
+ */
 function watchProduct(productDir, onChange) {
-  const watchers = [];
+  const watchers = new Map(); // dir -> FSWatcher
   let timer = null;
-  const fire = () => {
-    clearTimeout(timer);
-    timer = setTimeout(onChange, 120);
-  };
-  const tryWatch = (dir, opts) => {
-    try {
-      if (!fs.existsSync(dir)) return false;
-      const w = fs.watch(dir, opts, fire);
-      w.on('error', () => {});
-      watchers.push(w);
-      return true;
-    } catch {
-      return false;
+  const targets = () => [path.dirname(productDir), productDir, path.join(productDir, 'flows')];
+  const arm = () => {
+    for (const dir of targets()) {
+      if (watchers.has(dir) || !fs.existsSync(dir)) continue;
+      try {
+        const w = fs.watch(dir, {}, fire);
+        w.on('error', () => {
+          w.close();
+          watchers.delete(dir);
+        });
+        watchers.set(dir, w);
+      } catch {
+        // unwatchable folder: ignored, retried on the next change
+      }
     }
   };
-  if (!tryWatch(productDir, { recursive: true })) {
-    tryWatch(productDir, {});
-    tryWatch(path.join(productDir, 'flows'), {});
-  }
-  // The product folder may not exist yet: watch the parent so it appears without a restart.
-  tryWatch(path.dirname(productDir), {});
-  return () => watchers.forEach((w) => w.close());
+  const fire = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      arm();
+      onChange();
+    }, 120);
+  };
+  arm();
+  return () => {
+    clearTimeout(timer);
+    for (const w of watchers.values()) w.close();
+    watchers.clear();
+  };
 }
 
 /**
@@ -107,10 +120,14 @@ export async function serve({ productDir, port = 4747, host = '127.0.0.1', watch
   const closeWatch = watch ? watchProduct(productDir, invalidate) : () => {};
 
   const server = http.createServer((req, res) => {
-    const url = new URL(req.url, 'http://localhost');
-    const p = decodeURIComponent(url.pathname);
+    let p;
     try {
       if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method not allowed');
+      try {
+        p = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+      } catch {
+        return send(res, 400, 'Bad request: malformed URL');
+      }
       if (p === '/' || p === '/index.html') return sendFile(res, path.join(clientDir, 'index.html'));
       if (p === '/api/map') {
         const { map } = getData();

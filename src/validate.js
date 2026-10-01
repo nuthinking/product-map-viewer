@@ -16,6 +16,10 @@ import {
   mermaidBlocks,
   section,
   countOccurrences,
+  splitLines,
+  pyStr,
+  pyTruthy,
+  isExternalLink,
 } from './markdown-utils.js';
 
 /** Python-style list repr, so messages match scripts/validate.py byte for byte. */
@@ -58,10 +62,6 @@ const read = (p) => fs.readFileSync(p, 'utf8');
 const isFile = (p) => fs.existsSync(p) && fs.statSync(p).isFile();
 const isDir = (p) => fs.existsSync(p) && fs.statSync(p).isDirectory();
 
-function isExternal(target) {
-  return /^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith('//');
-}
-
 function checkLinks(rep, product, rel, md) {
   const filePath = path.join(product, rel);
   const base = path.dirname(filePath);
@@ -72,11 +72,12 @@ function checkLinks(rep, product, rel, md) {
       const n = i + 1;
       for (const m of line.matchAll(LINK_RE)) {
         const [, text, target] = m;
-        if (isExternal(target)) continue;
+        if (isExternalLink(target)) continue;
         const hashIdx = target.indexOf('#');
         const filePart = hashIdx === -1 ? target : target.slice(0, hashIdx);
         const anchor = hashIdx === -1 ? '' : target.slice(hashIdx + 1);
-        const targetPath = filePart === '' ? filePath : path.normalize(path.join(base, filePart));
+        // Like Python's os.path.join: an absolute href replaces the base instead of being appended.
+        const targetPath = filePart === '' ? filePath : path.normalize(path.isAbsolute(filePart) ? filePart : path.join(base, filePart));
         if (!fs.existsSync(targetPath)) {
           const inside = path.resolve(targetPath).startsWith(productAbs);
           if (inside || filePart.endsWith('.md')) {
@@ -264,12 +265,12 @@ export function validateProductMap(product) {
         rep.error(rel, `frontmatter is missing required key '${key}'`, 1);
       }
     }
-    const fid = String(fm.id ?? stem);
-    if (fm.id && fid !== stem) rep.error(rel, `frontmatter id '${fid}' must match the file name '${stem}'`, 1);
+    const fid = pyStr(fm.id ?? stem);
+    if (pyTruthy(fm.id) && fid !== stem) rep.error(rel, `frontmatter id '${fid}' must match the file name '${stem}'`, 1);
     if (!ID_RE.test(fid)) rep.error(rel, `flow id '${fid}' is not kebab-case`, 1);
     if (flowIds.has(fid)) rep.error(rel, `duplicate flow id '${fid}' (also in ${flowIds.get(fid)})`, 1);
     flowIds.set(fid, rel);
-    const status = String(fm.status ?? '');
+    const status = pyStr(fm.status ?? '');
     if (status && !STATUS_VALUES.has(status)) {
       rep.error(rel, `status '${status}' must be one of ${STATUS_LIST}`, 1);
     }
@@ -284,7 +285,7 @@ export function validateProductMap(product) {
       if (!featureIds.has(f)) rep.error(rel, `references unknown feature '${f}' (not defined in features.md)`, 1);
     }
     flowFeatures.set(fid, new Set(feats));
-    const title = String(fm.title ?? '').trim();
+    const title = pyStr(fm.title ?? '').trim();
     if (title) {
       const key = title.toLowerCase();
       if (!flowTitles.has(key)) flowTitles.set(key, []);
@@ -353,7 +354,7 @@ export function validateProductMap(product) {
     }
   }
   if (!readmeLinks.some((t) => t.split('#')[0] === 'features.md')) rep.warn('README.md', 'does not link to features.md');
-  if (readmeMd.split('\n').length > 90) rep.warn('README.md', 'is long; it should be readable in under a minute');
+  if (splitLines(readmeMd).length > 90) rep.warn('README.md', 'is long; it should be readable in under a minute');
 
   // ---- Summary info
   const allFiles = ['README.md', 'features.md', ...flowFiles.map((f) => `flows/${f}`)];
